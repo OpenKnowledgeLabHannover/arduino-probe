@@ -5,6 +5,8 @@
 | Microcontroller | Adafruit Feather 32u4 FONA | https://www.adafruit.com/products/3027 | 55.22 |
 | Display Unit | FeatherWing OLED - 128x32 OLED Add-on | https://www.adafruit.com/products/2900 | 16.48 |
 | Particle Sensor | Nova Fitness PM sensor SDS011 | https://www.aliexpress.com/item/_/32317805049.html | 22.76 |
+| Hazardous Gas Sensor | MQ-135 | https://www.amazon.com/dp/B01J3M9TYS | 5.00 |
+| Electret Microphone | LM393 | https://www.amazon.com/dp/B01HMF5OOW | 4.00 |
 | Solar Panel | 6V 4,5W Monokristallin | http://www.ebay.de/itm/152231703667 | 11.99 |
 | Rechargeable Battery | Seeedstudio Polymer Lithium Ion Battery - 5100mAh 3.8V | https://www.amazon.de/dp/B01C9PI4KQ | 20.09 |
 | Solar Charger | Adafruit USB / DC / Solar Lithium Ion/Polymer Charger | https://www.adafruit.com/products/390 | 17.93 |
