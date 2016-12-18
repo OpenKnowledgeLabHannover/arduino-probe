@@ -16,6 +16,7 @@ unsigned int Pm10 = 0;
 uint16_t vbat = 0;
 unsigned int gas = 0;
 unsigned int spl = 0;
+int particleerror;
 
 // this is a large buffer for replies
 char replybuffer[255];
@@ -39,6 +40,7 @@ Adafruit_FONA fona = Adafruit_FONA(FONA_RST);
 Adafruit_MQTT_FONA mqtt(&fona, "io.adafruit.com", 1883, "npohle", "------<HIDDEN>---------");
 Adafruit_MQTT_Publish pm10feed = Adafruit_MQTT_Publish(&mqtt, "npohle/feeds/npohle-pm10");
 Adafruit_MQTT_Publish pm25feed = Adafruit_MQTT_Publish(&mqtt, "npohle/feeds/npohle-pm25");
+Adafruit_MQTT_Publish pmerrorfeed = Adafruit_MQTT_Publish(&mqtt, "npohle/feeds/npohle-pm-error");
 Adafruit_MQTT_Publish batfeed = Adafruit_MQTT_Publish(&mqtt, "npohle/feeds/npohle-battery");
 Adafruit_MQTT_Publish gasfeed = Adafruit_MQTT_Publish(&mqtt, "npohle/feeds/npohle-gas");
 Adafruit_MQTT_Publish splfeed = Adafruit_MQTT_Publish(&mqtt, "npohle/feeds/npohle-spl");
@@ -93,12 +95,14 @@ void setup() {
   //fona.enableNetworkTimeSync(true);
 
   Serial1.begin(9600, SERIAL_8N1);
+  
   Pm25 = 0;
   Pm10 = 0;
   vbat = 0;
   gas = 0;
   spl = 0;
-
+  particleerror = 0;
+  
   pinMode(A0, INPUT); // gas
   pinMode(A1, INPUT); // spl
 }
@@ -122,15 +126,11 @@ void sample(int32_t window) {
 
   gas = analogRead(A0);
   spl = getSPL(window);
+  particleerror = getParticles(&Pm10, &Pm25);
   
   uint16_t statuscode;
   int16_t length;
   char url[80];
-
-  uint8_t mData = 0;
-  uint8_t i = 0;
-  uint8_t mPkt[10] = {0};
-  uint8_t mCheck = 0;
 
   int8_t ret;
 
@@ -152,73 +152,7 @@ void sample(int32_t window) {
   }
 
   Serial.println(F("Read PM Sensor"));
-  if (Serial1.available() > 0)
-  {
-    Serial.println(F("Serial available"));
-    // from www.inovafitness.com
-    // packet format: AA C0 PM25_Low PM25_High PM10_Low PM10_High 0 0 CRC AB
-    mData = Serial1.read();     delay(2);//wait until packet is received
-    if (mData == 0xAA) //head1 ok
-    {
-      Serial.println(F("Serial PM Sensor: Start reading header"));
-      mPkt[0] =  mData;
-      mData = Serial1.read();
-      if (mData == 0xc0) //head2 ok
-      {
-        Serial.println(F("Serial PM Sensor: Start reading data"));
-        mPkt[1] =  mData;
-        mCheck = 0;
-        for (i = 0; i < 6; i++) //data recv and crc calc
-        {
-          mPkt[i + 2] = Serial1.read();
-          delay(2);
-          mCheck += mPkt[i + 2];
-        }
-        mPkt[8] = Serial1.read();
-        delay(1);
-        mPkt[9] = Serial1.read();
-        Serial.println(F("Serial PM Sensor: Finished reading data"));
-        Serial.print("MCheck: ");
-        Serial.print(mCheck, HEX);
-        Serial.println(" Package:");
-        for (int k = 0; k < 9; ++k) {
-          Serial.print(mPkt[k], HEX);
-          Serial.print(" ");
-        }
-        if (mCheck%256 == mPkt[8]) //crc ok
-        {
-          Serial.println(F("Serial PM Sensor: CRC OK"));
-          Serial1.flush();
-          Serial.write(mPkt, 10);
-
-          Pm25 = (uint16_t)mPkt[2] | (uint16_t)(mPkt[3] << 8);
-          Pm10 = (uint16_t)mPkt[4] | (uint16_t)(mPkt[5] << 8);
-          if (Pm25 > 9999)
-            Pm25 = 9999;
-          if (Pm10 > 9999)
-            Pm10 = 9999;
-          //get one good packet
-          Serial.println(Pm25);
-          Serial.println(Pm10);
-          Serial.println(F("-------"));
-
-
-
-          //sprintf(url, "http://dweet.io/dweet/quietly/for/feinstaub-alpha?pm10=%d&pm25=%d", Pm10, Pm25);
-          //sprintf(url, "http://io.adafruit.com/api/groups/weather/send.json?x-aio-key=82de2021b7844e0c9c7f98b9d799ae92&npohle-pm10=%d&npohle-pm25=%d", Pm10, Pm25);
-
-        } else {
-          Serial.println(F("Serial PM Sensor: CRC NOT OK"));
-        }
-      } else {
-        Serial.println(F("Serial PM Sensor: Header2 NOT OK"));
-      }
-    } else {
-      Serial.println(F("Serial PM Sensor: Header1 NOT OK"));
-    }
-  } else {
-    Serial.println("Serial1 not available!");
-  }
+  
 
   // Sending
 
@@ -252,32 +186,43 @@ void sample(int32_t window) {
   }
   Serial.println("MQTT Connected!");
 
-  if (! pm10feed.publish((int32_t)Pm10)) {
-    Serial.println(F("Failed to publish PM10"));
-  } else {
-    Serial.println(F("Published PM10!"));
-    SendStatus += "P1 ";
+  if (Pm10>0) {
+    if (! pm10feed.publish((int32_t)Pm10)) {
+      Serial.println(F("Failed to publish PM10"));
+    } else {
+      Serial.println(F("Published PM10!"));
+      SendStatus += "P1 ";
+    }
   }
 
-  if (! pm25feed.publish((int32_t)Pm25)) {
-    Serial.println(F("Failed to publish PM25"));
+  if (Pm25>0) {
+    if (! pm25feed.publish((int32_t)Pm25)) {
+      Serial.println(F("Failed to publish PM25"));
+    } else {
+      Serial.println(F("Published PM25!"));
+      SendStatus += "P2 ";
+    }
+  }
+  
+  if (! pmerrorfeed.publish((int32_t)particleerror)) {
+    Serial.println(F("Failed to publish PM Error"));
   } else {
-    Serial.println(F("Published PM25!"));
-    SendStatus += "P2 ";
+    Serial.println(F("Published PM Error!"));
+    SendStatus += "PE ";
   }
 
   if (! batfeed.publish((int32_t)vbat)) {
     Serial.println(F("Failed to publish Battery"));
   } else {
     Serial.println(F("Published Battery!"));
-    SendStatus += "BAT ";
+    SendStatus += "B ";
   }
 
   if (! gasfeed.publish((int32_t)gas)) {
     Serial.println(F("Failed to publish Gas"));
   } else {
     Serial.println(F("Published Gas!"));
-    SendStatus += "GAS ";
+    SendStatus += "G ";
   }
 
   if (! splfeed.publish((int32_t)spl)) {
@@ -346,4 +291,79 @@ uint16_t getBattery() {
     Serial.println(F("Error reading Battery Voltage!"));
   }
   return 0;
+}
+
+uint8_t getParticles (unsigned int *Pm25, unsigned int *Pm10) {
+
+  const uint16_t sampleWindow = 10000;
+  unsigned long startMillis= millis();
+
+  uint8_t ret = 1; //default: timeout
+
+  while (millis() - startMillis < sampleWindow) {
+
+    uint8_t mData = 0;
+    uint8_t i = 0;
+    uint8_t mPkt[10] = {0};
+    uint8_t mCheck = 0;
+    
+    //Serial.print("t");
+    if (Serial1.available() > 0)
+    {
+      // Serial.println(F("Serial available"));
+      // from www.inovafitness.com
+      // packet format: AA C0 PM25_Low PM25_High PM10_Low PM10_High 0 0 CRC AB
+      mData = Serial1.read();     delay(2);//wait until packet is received
+      if (mData == 0xAA) //head1 ok
+      {
+        //Serial.println(F("Serial PM Sensor: Start reading header"));
+        mPkt[0] =  mData;
+        mData = Serial1.read(); delay(2);
+        if (mData == 0xc0) //head2 ok
+        {
+          //Serial.println(F("Serial PM Sensor: Start reading data"));
+          mPkt[1] =  mData;
+          mCheck = 0;
+          for (i = 0; i < 6; i++) //data recv and crc calc
+          {
+            mPkt[i + 2] = Serial1.read();
+            delay(2);
+            mCheck += mPkt[i + 2];
+          }
+          mPkt[8] = Serial1.read();delay(2);
+          mPkt[9] = Serial1.read();delay(2);
+          mPkt[10] = Serial1.read();delay(2);
+          Serial.print("MCheck: ");
+          Serial.print(mCheck, HEX);
+          Serial.print(" Package: ");
+          for (int k = 0; k < 10; k++) {
+            Serial.print(mPkt[k], HEX);
+            Serial.print(" ");
+          }
+          Serial.println("");
+          if (mCheck == mPkt[8]) //crc ok
+          {
+            //Serial.println(F("Serial PM Sensor: CRC OK"));
+            //Serial1.flush();
+            //Serial.write(mPkt, 10);
+            
+            *Pm25 = (uint16_t)mPkt[2] | (uint16_t)(mPkt[3] << 8);
+            *Pm10 = (uint16_t)mPkt[4] | (uint16_t)(mPkt[5] << 8);
+            if (*Pm25 > 9999)
+              *Pm25 = 9999;
+            if (*Pm10 > 9999)
+              *Pm10 = 9999;
+
+            return 0; // no error
+            
+          } else {
+            Serial.println(F("Serial PM Sensor: CRC NOT OK"));
+            ret = 3;
+          }
+        }
+      }
+    }
+  }
+  
+  return ret;
 }
